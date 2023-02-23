@@ -2,7 +2,7 @@ on:
   pull_request:
     branches:
       - main
-      - master
+      - master_copy
     types: ["closed"]
 
 jobs:
@@ -22,4 +22,4 @@ jobs:
           labels: |
             cherry-pick
           reviewers: |
-            yuzisun
+            rachitchauhan43
