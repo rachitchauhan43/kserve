@@ -22,6 +22,4 @@ jobs:
           labels: |
             cherry-pick
           reviewers: |
-            rachitchauhan43
-env:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}            
+            rachitchauhan43      
