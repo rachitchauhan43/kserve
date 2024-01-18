@@ -18,14 +18,17 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/kserve/kserve/pkg/constants"
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/tidwall/gjson"
@@ -42,7 +45,7 @@ var log = logf.Log.WithName("InferenceGraphRouter")
 
 func callService(serviceUrl string, input []byte, headers http.Header) ([]byte, error) {
 	defer timeTrack(time.Now(), "step", serviceUrl)
-	log.Info("Entering callService", "url", serviceUrl)
+	log.Info("Entering callService - RACHIT CHAUHAN", "url", serviceUrl)
 	req, err := http.NewRequest("POST", serviceUrl, bytes.NewBuffer(input))
 	for _, h := range headersToPropagate {
 		if values, ok := headers[h]; ok {
@@ -214,11 +217,55 @@ func main() {
 		os.Exit(1)
 	}
 
+	//http.HandleFunc("/", graphHandler)
+	//
+	//err = http.ListenAndServe(":8080", nil)
+	//if err != nil {
+	//	log.Error(err, "failed to listen on 8080")
+	//	os.Exit(1)
+	//}
+
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: nil,
+	}
 	http.HandleFunc("/", graphHandler)
 
-	err = http.ListenAndServe(":8080", nil)
-	if err != nil {
-		log.Error(err, "failed to listen on 8080")
-		os.Exit(1)
+	go func() {
+		err = server.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error(err, fmt.Sprintf("Failed to listen on address %v", server.Addr))
+			os.Exit(1)
+		}
+	}()
+
+	// Blocks until SIGTERM or SIGINT is received
+	handleSignals(server)
+}
+
+func handleSignals(server *http.Server) {
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+
+	sig := <-signalChan
+	log.Info("Received shutdown signal", "signal", sig)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Shut down the server gracefully
+	if err := server.Shutdown(ctx); err != nil && errors.Is(err, http.ErrServerClosed) {
+		log.Error(err, "Failed to shutdown the server gracefully")
+
+		// Shut down the server forcefully if context deadline exceeded.
+		if errors.Is(err, context.DeadlineExceeded) {
+			log.Info("Shutting down the server forcefully ...")
+			if err := server.Close(); err != nil {
+				log.Error(err, "Failed to shutdown the server forcefully")
+				os.Exit(1)
+			}
+			log.Info("Server forcefully shutdown")
+		}
+	} else {
+		log.Info("Server gracefully shutdown")
 	}
 }
